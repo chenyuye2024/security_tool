@@ -606,49 +606,41 @@ class SecurityToolGUI:
             self.show_message("请先选择要测试的代理")
             return
 
-    def test_task():
-        for item in selected:
-            values = self.proxy_tree.item(item)['values']
-            proxy = f"http://{values[0]}:{values[1]}"  # 假设 values 中包含代理的 IP 和端口
-            try:
-                start_time = time.time()
-                response = requests.get("http://httpbin.org/ip", proxies={"http": proxy, "https": proxy}, timeout=5)
-                response.raise_for_status()  # 如果响应状态码不是 200，抛出异常
-                end_time = time.time()
+        def test_task():
+            for item in selected:
+                values = self.proxy_tree.item(item)['values']
+                proxy_type = values[0]
+                ip = values[1]
+                port = values[2]
+                username = values[3] if values[3] != "-" else None
+                password = values[4] if values[4] != "-" else None
+    
+                proxy_url = f"{proxy_type.lower()}://{ip}:{port}"
+                if username and password:
+                    proxy_url = f"{proxy_type.lower()}://{username}:{password}@{ip}:{port}"
+    
+                try:
+                    start_time = time.time()
+                    response = requests.get("http://httpbin.org/ip", proxies={"http": proxy_url, "https": proxy_url}, timeout=5)
+                    response.raise_for_status()  # 如果响应状态码不是 200，抛出异常
+                    end_time = time.time()
+    
+                    delay = int((end_time - start_time) * 1000)  # 计算延迟，单位为毫秒
+                    status = "可用"
+    
+                    # 更新状态
+                    self.proxy_tree.set(item, "状态", status)
+                    self.proxy_tree.set(item, "延迟", f"{delay}ms")
+    
+                except requests.RequestException as e:
+                    status = "不可用"
+                    delay = "-"
+                    # 更新状态
+                    self.proxy_tree.set(item, "状态", status)
+                    self.proxy_tree.set(item, "延迟", delay)
 
-                delay = int((end_time - start_time) * 1000)  # 计算延迟，单位为毫秒
-                status = "可用"
-
-                # 更新状态
-                self.proxy_tree.set(item, "状态", status)
-                self.proxy_tree.set(item, "延迟", f"{delay}ms")
-
-            except requests.RequestException as e:
-                status = "不可用"
-                delay = "-"
-                # 更新状态
-                self.proxy_tree.set(item, "状态", status)
-                self.proxy_tree.set(item, "延迟", delay)
-    process_results(self):
-    """处理结果队列"""
-    try:
-        while True:
-            pdb.set_trace()
-            result = self.result_queue.get_nowait()
-            if result['type'] == 'password':
-                self.pwd_result.insert(tk.END, f"{result['message']}\n")
-            elif result['type'] == 'domain':
-                # 假设 result['message'] 是形如 "发现子域名: example.com -> 192.168.1.1" 的字符串
-                parts = result['message'].split(" -> ")
-                if len(parts) == 2:
-                    subdomain, ip = parts
-                    self.result_tree.insert("", "end", values=(subdomain, ip, "", ""))
-            elif result['type'] == 'proxy':
-                self.proxy_list.insert("", tk.END, values=result['data'])
-    except queue.Empty:
-        pass
-    finally:
-        self.root.after(100, self.process_results)
+        # 在新线程中执行测试
+        threading.Thread(target=test_task, daemon=True).start()
     def import_proxies(self):
         """从文件导入代理"""
         filename = filedialog.askopenfilename(
