@@ -10,6 +10,8 @@ import tkinter.messagebox as tm
 from modules.password_cracker import PasswordCracker
 import csv
 import pdb
+import requests
+import time
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
@@ -604,47 +606,49 @@ class SecurityToolGUI:
             self.show_message("请先选择要测试的代理")
             return
 
-        def test_task():
-            for item in selected:
-                values = self.proxy_tree.item(item)['values']
-                try:
-                    # 这里添加实际的代理测试逻辑
-                    # 模拟测试结果
-                    import time
-                    time.sleep(1)  # 模拟测试延迟
-                    status = "可用"
-                    delay = "200ms"
+    def test_task():
+        for item in selected:
+            values = self.proxy_tree.item(item)['values']
+            proxy = f"http://{values[0]}:{values[1]}"  # 假设 values 中包含代理的 IP 和端口
+            try:
+                start_time = time.time()
+                response = requests.get("http://httpbin.org/ip", proxies={"http": proxy, "https": proxy}, timeout=5)
+                response.raise_for_status()  # 如果响应状态码不是 200，抛出异常
+                end_time = time.time()
 
-                    # 更新状态
-                    self.proxy_tree.set(item, "状态", status)
-                    self.proxy_tree.set(item, "延迟", delay)
+                delay = int((end_time - start_time) * 1000)  # 计算延迟，单位为毫秒
+                status = "可用"
 
-                except Exception as e:
-                    self.proxy_tree.set(item, "状态", "不可用")
-                    self.proxy_tree.set(item, "延迟", "-")
+                # 更新状态
+                self.proxy_tree.set(item, "状态", status)
+                self.proxy_tree.set(item, "延迟", f"{delay}ms")
 
-        # 在新线程中执行测试
-        threading.Thread(target=test_task, daemon=True).start()
-    def process_results(self):
-        """处理结果队列"""
-        try:
-            while True:
-                pdb.set_trace()
-                result = self.result_queue.get_nowait()
-                if result['type'] == 'password':
-                    self.pwd_result.insert(tk.END, f"{result['message']}\n")
-                elif result['type'] == 'domain':
-                    # 假设 result['message'] 是形如 "发现子域名: example.com -> 192.168.1.1" 的字符串
-                    parts = result['message'].split(" -> ")
-                    if len(parts) == 2:
-                        subdomain, ip = parts
-                        self.result_tree.insert("", "end", values=(subdomain, ip, "", ""))
-                elif result['type'] == 'proxy':
-                    self.proxy_list.insert("", tk.END, values=result['data'])
-        except queue.Empty:
-            pass
-        finally:
-            self.root.after(100, self.process_results)
+            except requests.RequestException as e:
+                status = "不可用"
+                delay = "-"
+                # 更新状态
+                self.proxy_tree.set(item, "状态", status)
+                self.proxy_tree.set(item, "延迟", delay)
+    process_results(self):
+    """处理结果队列"""
+    try:
+        while True:
+            pdb.set_trace()
+            result = self.result_queue.get_nowait()
+            if result['type'] == 'password':
+                self.pwd_result.insert(tk.END, f"{result['message']}\n")
+            elif result['type'] == 'domain':
+                # 假设 result['message'] 是形如 "发现子域名: example.com -> 192.168.1.1" 的字符串
+                parts = result['message'].split(" -> ")
+                if len(parts) == 2:
+                    subdomain, ip = parts
+                    self.result_tree.insert("", "end", values=(subdomain, ip, "", ""))
+            elif result['type'] == 'proxy':
+                self.proxy_list.insert("", tk.END, values=result['data'])
+    except queue.Empty:
+        pass
+    finally:
+        self.root.after(100, self.process_results)
     def import_proxies(self):
         """从文件导入代理"""
         filename = filedialog.askopenfilename(
@@ -676,7 +680,7 @@ class SecurityToolGUI:
 
                         self.proxy_tree.insert("", "end", values=(
                             proxy_type,
-                            ip,
+                            ip, 
                             port,
                             username,
                             "未测试",
